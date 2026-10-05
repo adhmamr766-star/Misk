@@ -18,13 +18,13 @@ export default async function handler(req, res) {
       });
     }
 
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = process.env.TELEGRAM_CHAT_ID;
+    const resendApiKey = process.env.RESEND_API_KEY;
+    const orderEmail = process.env.ORDER_EMAIL;
 
-    if (!botToken || !chatId) {
+    if (!resendApiKey || !orderEmail) {
       return res.status(500).json({
         success: false,
-        message: "Telegram environment variables are missing",
+        message: "Email environment variables are missing",
       });
     }
 
@@ -32,53 +32,67 @@ export default async function handler(req, res) {
     const productsText = items
       .map(
         (item) =>
-          `• ${item.name} × ${item.quantity} — ${item.price * item.quantity} ج.م`
+          `• ${item.name} × ${item.quantity} — ${
+            item.price * item.quantity
+          } ج.م`
       )
       .join("\n");
 
-    // الرسالة التي ستصل إلى Telegram
-    const message = `
-🛍️ *طلب جديد من مِسك*
+    // محتوى الإيميل
+    const emailHtml = `
+      <div dir="rtl" style="font-family: Arial, sans-serif; line-height: 1.8;">
+        <h2>🛍️ طلب جديد من مِسك</h2>
 
-👤 *الاسم:* ${name}
-📱 *الهاتف:* ${phone}
-📍 *العنوان:* ${address}
+        <p><strong>👤 الاسم:</strong> ${name}</p>
+        <p><strong>📱 الهاتف:</strong> ${phone}</p>
+        <p><strong>📍 العنوان:</strong> ${address}</p>
 
-🧴 *المنتجات:*
-${productsText}
+        <h3>🧴 المنتجات:</h3>
+        <div style="white-space: pre-line;">
+          ${productsText}
+        </div>
 
-💰 *الإجمالي:* ${total} ج.م
-`;
+        <hr>
 
-    const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
+        <h3>💰 الإجمالي: ${total} ج.م</h3>
+      </div>
+    `;
 
-    const telegramResponse = await fetch(telegramUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: message,
-        parse_mode: "Markdown",
-      }),
-    });
+    // إرسال الإيميل عبر Resend
+    const resendResponse = await fetch(
+      "https://api.resend.com/emails",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${resendApiKey}`,
+        },
+        body: JSON.stringify({
+          from: "Misk <onboarding@resend.dev>",
+          to: [orderEmail],
+          subject: `🛍️ طلب جديد من مِسك - ${name}`,
+          html: emailHtml,
+        }),
+      }
+    );
 
-    const telegramData = await telegramResponse.json();
+    const resendData = await resendResponse.json();
 
-    if (!telegramData.ok) {
-      console.error("Telegram error:", telegramData);
+    if (!resendResponse.ok) {
+      console.error("Resend error:", resendData);
 
       return res.status(500).json({
         success: false,
-        message: "فشل إرسال الطلب إلى Telegram",
+        message: "فشل إرسال الطلب إلى البريد الإلكتروني",
+        error: resendData,
       });
     }
 
     return res.status(200).json({
       success: true,
-      message: "تم إرسال الطلب بنجاح",
+      message: "تم إرسال الطلب بنجاح إلى البريد الإلكتروني",
     });
+
   } catch (error) {
     console.error("Server error:", error);
 
